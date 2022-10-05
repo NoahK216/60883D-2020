@@ -16,11 +16,10 @@ void competition_initialize() {}
 
 void autonomous(){
 	switch(auton%autonumber){
-		case 0: homerow(); 					break;
-		
-		case 1: skills();         	break;
-		case 2: middle_row();		  	break;
-		case 3: empty(); 						break;
+		case 0: homerow();		break;
+		case 1: skills();       break;
+		case 2: middle_row();	break;
+		case 3: empty(); 		break;
 	}
 }
 
