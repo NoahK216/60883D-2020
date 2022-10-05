@@ -1,92 +1,96 @@
-#include "main.h"
+#include "include.cpp"
+#include "autons.cpp"
+#include "drive_functions.cpp"
+#include "movement.cpp"
 
-/**
- * A callback function for LLEMU's center button.
- *
- * When this callback is fired, it will toggle line 2 of the LCD text between
- * "I was pressed!" and nothing.
- */
-void on_center_button() {
-	static bool pressed = false;
-	pressed = !pressed;
-	if (pressed) {
-		pros::lcd::set_text(2, "I was pressed!");
-	} else {
-		pros::lcd::clear_line(2);
+lv_obj_t * statsLabel;
+void initialize() {
+	statsLabel = lv_label_create(lv_scr_act(), NULL);
+  lv_label_set_text(statsLabel, "IMU Rotation:\nIMU Heading:\n"); //sets label text
+  lv_obj_align(statsLabel, NULL, LV_ALIGN_IN_TOP_LEFT, 10, 0); //set the position to center
+}
+
+void disabled() {}
+
+void competition_initialize() {}
+
+void autonomous(){
+	switch(auton%autonumber){
+		case 0: homerow(); 					break;
+		
+		case 1: skills();         	break;
+		case 2: middle_row();		  	break;
+		case 3: empty(); 						break;
 	}
 }
 
-/**
- * Runs initialization code. This occurs as soon as the program is started.
- *
- * All other competition modes are blocked by initialize; it is recommended
- * to keep execution time for this mode under a few seconds.
- */
-void initialize() {
-	pros::lcd::initialize();
-	pros::lcd::set_text(1, "Hello PROS User!");
-
-	pros::lcd::register_btn1_cb(on_center_button);
-}
-
-/**
- * Runs while the robot is in the disabled state of Field Management System or
- * the VEX Competition Switch, following either autonomous or opcontrol. When
- * the robot is enabled, this task will exit.
- */
-void disabled() {}
-
-/**
- * Runs after initialize(), and before autonomous when connected to the Field
- * Management System or the VEX Competition Switch. This is intended for
- * competition-specific initialization routines, such as an autonomous selector
- * on the LCD.
- *
- * This task will exit when the robot is enabled and autonomous or opcontrol
- * starts.
- */
-void competition_initialize() {}
-
-/**
- * Runs the user autonomous code. This function will be started in its own task
- * with the default priority and stack size whenever the robot is enabled via
- * the Field Management System or the VEX Competition Switch in the autonomous
- * mode. Alternatively, this function may be called in initialize or opcontrol
- * for non-competition testing purposes.
- *
- * If the robot is disabled or communications is lost, the autonomous task
- * will be stopped. Re-enabling the robot will restart the task, not re-start it
- * from where it left off.
- */
-void autonomous() {}
-
-/**
- * Runs the operator control code. This function will be started in its own task
- * with the default priority and stack size whenever the robot is enabled via
- * the Field Management System or the VEX Competition Switch in the operator
- * control mode.
- *
- * If no competition control is connected, this function will run immediately
- * following initialize().
- *
- * If the robot is disabled or communications is lost, the
- * operator control task will be stopped. Re-enabling the robot will restart the
- * task, not resume it from where it left off.
- */
-void opcontrol() {
-	pros::Controller master(pros::E_CONTROLLER_MASTER);
-	pros::Motor left_mtr(1);
-	pros::Motor right_mtr(2);
-
+void opcontrol(){
+	//pros::Task BallCount (indexCount_fn, (void*)"PROS", "BalCount");
 	while (true) {
-		pros::lcd::print(0, "%d %d %d", (pros::lcd::read_buttons() & LCD_BTN_LEFT) >> 2,
-		                 (pros::lcd::read_buttons() & LCD_BTN_CENTER) >> 1,
-		                 (pros::lcd::read_buttons() & LCD_BTN_RIGHT) >> 0);
-		int left = master.get_analog(ANALOG_LEFT_Y);
-		int right = master.get_analog(ANALOG_RIGHT_Y);
+		//Assign variables to joystick values for ease of use
+		int leftX = master.get_analog(ANALOG_LEFT_X);
+		int leftY = master.get_analog(ANALOG_LEFT_Y);
+		int rightX = master.get_analog(ANALOG_RIGHT_X);
+		int rightY = master.get_analog(ANALOG_RIGHT_Y);
 
-		left_mtr = left;
-		right_mtr = right;
+
+		//Change auton value
+		if(master.get_digital_new_press(DIGITAL_LEFT)){auton--;}
+		else if(master.get_digital_new_press(DIGITAL_RIGHT)){auton++;}
+
+
+		//Display current autonomous on the controller
+		if(autoTouch){switch(auton%autonumber){
+			case 0: master.print(2, 0, "Homerow                     "); break;
+			case 1: master.print(2, 0, "Skills                      "); break;
+			case 2: master.print(2, 0, "Middle Row                  "); break;
+			case 3: master.print(2, 0, "No Auton                    "); break;
+		}}
+		else{master.print(2, 0, "%.2f                   ", imu.get_heading());}
+
+
+		//Set drive motor speeds
+		frontright = leftY - rightX;
+		backright = leftY - rightX;
+		frontleft = leftY + rightX;
+		backleft = leftY + rightX;
+
+
+		//Confine roller and intake speed assignment to a function to keep opcontrol cleaner
+		intakeRollerControl();
+
+		//Run the currently selected autonomous when B is pressed
+		if(master.get_digital_new_press(DIGITAL_B)){
+			skills();
+		}
+
+		//Calibrates the IMU on a button press
+		if(master.get_digital_new_press(DIGITAL_UP)){
+			imu.reset();
+			while (imu.is_calibrating()) {master.print(2, 0, "Calibrating IMU        "); pros::delay(20);}
+			float start = pros::millis();
+			while(pros::millis() < start + 2000){master.print(2, 0, "IMU Calibrated         ");pros::delay(20);}
+		}
+
+
+		//Changes controller display to toggle autoTouch on button press
+		if(master.get_digital_new_press(DIGITAL_DOWN)){autoTouch=!autoTouch;}
+
+		//Intake toggle for skills
+		if(master.get_digital_new_press(DIGITAL_Y)){intakeToggle=!intakeToggle;}
+
+		//Lineup for middle row
+		if(master.get_digital_new_press(DIGITAL_X)){drivePID("backward", 25, 3, 50);}
+
+
+		char buffer[150];
+		sprintf(buffer,
+			"IMU Rotation: %.2f\nIMU Heading: %.2f",
+			imu.get_rotation(), imu.get_heading()
+		);
+		lv_label_set_text(statsLabel, buffer);
+
+
 		pros::delay(20);
 	}
 }
